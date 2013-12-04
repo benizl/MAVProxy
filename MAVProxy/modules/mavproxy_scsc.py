@@ -88,7 +88,7 @@ def init(_mpstate):
     mpstate = _mpstate
     mpstate.state = inspect_state()
     mpstate.command_map['scsc'] = (cmd_scsc, "Control SCSC inspection program")
-    print("Module SCSC loaded")
+    print("SCSC Inspection loaded.  Begin program with 'scsc start'")
 
 def cmd_scsc(args):
     if len(args) == 1:
