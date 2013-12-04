@@ -13,11 +13,12 @@ mpstate = None
 
 ### Control parameters
 
-rf_min = 0.5           # Minimum rangefinder range considered valid
+rf_min = 1             # Minimum rangefinder range considered valid
 rf_max = 5             # Maximum rangefinder range considered valid
 rf_top_count = 20      # Number of consecutive samples above max before recognizing the top of the chimney
 
 safety_ceiling = 100   # Height in metres at which we will abort the search for chimney top
+safety_climb = 1       # Height in metres above the top of the chimney to climb to before placing sensor
 
 yaw_angle = 90         # Angle to yaw through to place the sensor (if the sign is changed,
                        # the yaw functions below should be too)
