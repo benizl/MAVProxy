@@ -23,9 +23,11 @@ safety_climb = 1       # Height in metres above the top of the chimney to climb 
 yaw_angle = 90         # Angle to yaw through to place the sensor (if the sign is changed,
                        # the yaw functions below should be too)
 
-yaw_tolerance = 10     # Tolerance with which to try and reach the above angle
+yaw_tolerance = 5      # Tolerance with which to try and reach the above angle
 
 sample_time = 30       # Time in seconds spent sampling at the top of the chimney
+
+land_alt = 3           # Altitude in meters to switch from loiter descent to LAND mode
 
 ### Control parameters
 
@@ -33,7 +35,7 @@ sample_time = 30       # Time in seconds spent sampling at the top of the chimne
 ### Craft control functions
 
 def climb():
-    mpstate.functions.process_stdin("rc 3 1600")
+    mpstate.functions.process_stdin("rc 3 1650")
 
 def stop_climb():
     mpstate.functions.process_stdin("rc 3 1400")
@@ -46,6 +48,9 @@ def stop_yaw():
 
 def yaw_out():
     mpstate.functions.process_stdin("rc 4 1425")
+
+def descend():
+    mpstate.functions.process_stdin("rc 3 1200")
 
 def land():
     mpstate.functions.process_stdin("mode land")
@@ -70,13 +75,14 @@ def description():
 def enum(**enums):
     return type('Enum', (), enums)
 
-InspectState = enum(INIT=0, WAIT_LOITER=1, WAIT_RANGE=2, CLIMB=3, CONFIRM_TOP=4, SAFETY_CLIMB=5, PLACE_SENSOR=6, SAMPLE=7, REMOVE_SENSOR=8, LAND=9, SLEEP=10)
+InspectState = enum(INIT=0, WAIT_LOITER=1, WAIT_RANGE=2, CLIMB=3, CONFIRM_TOP=4, SAFETY_CLIMB=5, PLACE_SENSOR=6, SAMPLE=7, REMOVE_SENSOR=8, DESCEND=9, LAND=10, SLEEP=11)
 
 
 class inspect_state(object):
     def __init__(self):
         self.state = InspectState.INIT
         self.dist = -1
+        self.cur_yaw = 0
         self.tcount = 0
         self.chim_yaw = 0
         self.chim_top = 0
@@ -117,13 +123,11 @@ def angle_diff(angle1, angle2):
 def mavlink_packet(m):
     '''handle an incoming mavlink packet'''
 
-    if "RANGEFINDER" in mpstate.status.msgs:
-        mpstate.state.dist = mpstate.status.msgs['RANGEFINDER'].distance
+    if m.get_type() == "RANGEFINDER":
+        mpstate.state.dist = m.distance
 
-    if "GLOBAL_POSITION_INT" in mpstate.status.msgs:
-        cur_yaw = mpstate.status.msgs['GLOBAL_POSITION_INT'].hdg / 100
-    else:
-        cur_yaw = 0
+    if m.get_type() == "GLOBAL_POSITION_INT":
+        mpstate.state.cur_yaw = m.hdg / 100
 
     if (mpstate.state.state > InspectState.WAIT_LOITER and
       mpstate.state.state < InspectState.LAND and
@@ -168,7 +172,7 @@ def mavlink_packet(m):
             if mpstate.state.tcount >  rf_top_count:
                 print("Yep, it is.  Climbing a little for safety")
                 climb()
-                mpstate.state.chim_yaw = cur_yaw
+                mpstate.state.chim_yaw = mpstate.state.cur_yaw
                 mpstate.state.chim_top = mpstate.status.altitude
                 mpstate.state.state = InspectState.SAFETY_CLIMB
         else:
@@ -186,7 +190,7 @@ def mavlink_packet(m):
 
     if mpstate.state.state == InspectState.PLACE_SENSOR:
         # Wait to yaw around to face the chimney (within tolerance)
-        if abs(angle_diff(cur_yaw, mpstate.state.chim_yaw) - yaw_angle) < yaw_tolerance:
+        if abs(angle_diff(mpstate.state.cur_yaw, mpstate.state.chim_yaw) - yaw_angle) < yaw_tolerance:
             print("Sensor in position")
             stop_yaw()
             mpstate.state.sample_time = time.time()
@@ -195,20 +199,26 @@ def mavlink_packet(m):
     if mpstate.state.state == InspectState.SAMPLE:
         # Wait for the sample time to expire
         if time.time() - mpstate.state.sample_time >= sample_time:
-            print("Sample completed")
+            print("Sample completed, yawing back")
             yaw_out()
             mpstate.state.state = InspectState.REMOVE_SENSOR
 
     if mpstate.state.state == InspectState.REMOVE_SENSOR:
         # Wait to yaw back to the previous orientation (within tolerance) then land
-        if abs(angle_diff(cur_yaw, mpstate.state.chim_yaw)) < yaw_tolerance:
-            print("Yaw back, ready to land")
+        if abs(angle_diff(mpstate.state.cur_yaw, mpstate.state.chim_yaw)) < yaw_tolerance:
+            print("Descending")
             stop_yaw()
+            descend()
+            mpstate.state.state = InspectState.DESCEND
+
+    if mpstate.state.state == InspectState.DESCEND:
+        if mpstate.status.altitude < land_alt:
+            print("Landing")
             land()
             mpstate.state.state = InspectState.LAND
 
     if mpstate.state.state == InspectState.LAND:
-        if mpstate.status.altitude < 1:
+        if mpstate.status.altitude < 0.5:
             print("Great success")
             mpstate.state.state = InspectState.SLEEP
 
