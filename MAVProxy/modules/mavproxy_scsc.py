@@ -70,7 +70,7 @@ def description():
 def enum(**enums):
     return type('Enum', (), enums)
 
-InspectState = enum(INIT=0, WAIT_LOITER=1, WAIT_RANGE=2, CLIMB=3, CONFIRM_TOP=4, PLACE_SENSOR=5, SAMPLE=6, REMOVE_SENSOR=7, LAND=8, SLEEP=9)
+InspectState = enum(INIT=0, WAIT_LOITER=1, WAIT_RANGE=2, CLIMB=3, CONFIRM_TOP=4, SAFETY_CLIMB=5, PLACE_SENSOR=6, SAMPLE=7, REMOVE_SENSOR=8, LAND=9, SLEEP=10)
 
 
 class inspect_state(object):
@@ -79,6 +79,7 @@ class inspect_state(object):
         self.dist = -1
         self.tcount = 0
         self.chim_yaw = 0
+        self.chim_top = 0
         self.sample_time = 0
 
 def init(_mpstate):
@@ -160,18 +161,29 @@ def mavlink_packet(m):
         # If we get them, record our orientation and start yawing through
         # 90 degrees.  If not, restart the climb
         if mpstate.state.dist > rf_max:
-            mpstate.state.tcount += 1
+            # Count the number of RANGEFINDER updates only
+            if m.get_type() == 'RANGEFINDER':
+                mpstate.state.tcount += 1
 
             if mpstate.state.tcount >  rf_top_count:
-                print("Yep, it is.  Placing sensor")
-                yaw_in()
+                print("Yep, it is.  Climbing a little for safety")
+                climb()
                 mpstate.state.chim_yaw = cur_yaw
-                mpstate.state.state = InspectState.PLACE_SENSOR
+                mpstate.state.chim_top = mpstate.status.altitude
+                mpstate.state.state = InspectState.SAFETY_CLIMB
         else:
             print("False trigger, climbing some more")
             mpstate.state.tcount = 0
             climb()
             mpstate.state.state = InspectState.CLIMB
+
+    if mpstate.state.state == InspectState.SAFETY_CLIMB:
+        if mpstate.status.altitude >= mpstate.state.chim_top + safety_climb:
+            print("Safe distance reached, placing sensor")
+            stop_climb()
+            yaw_in()
+            mpstate.state.state = InspectState.PLACE_SENSOR
+
     if mpstate.state.state == InspectState.PLACE_SENSOR:
         # Wait to yaw around to face the chimney (within tolerance)
         if abs(angle_diff(cur_yaw, mpstate.state.chim_yaw) - yaw_angle) < yaw_tolerance:
