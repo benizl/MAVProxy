@@ -39,16 +39,23 @@ def stop_climb():
     mpstate.functions.process_stdin("rc 3 1400")
 
 def yaw_in():
-    mpstate.functions.process_stdin("rc 4 1600")
+    mpstate.functions.process_stdin("rc 4 1575")
 
 def stop_yaw():
     mpstate.functions.process_stdin("rc 4 1500")
 
 def yaw_out():
-    mpstate.functions.process_stdin("rc 4 1400")
+    mpstate.functions.process_stdin("rc 4 1425")
 
 def land():
     mpstate.functions.process_stdin("mode land")
+
+def abort():
+    # On abort, stop whatever we're doing and enforce loiter
+    # (in case what we were doing was landing)
+    stop_climb()
+    stop_yaw()
+    mpstate.functions.process_stdin("loiter")
 
 ### End craft control functions
 
@@ -91,6 +98,7 @@ def cmd_scsc(args):
             else:
                 print("Already started!")
         elif args[0] == 'abort':
+            abort()
             mpstate.state.state = InspectState.INIT
             print("SCSC program aborted")
     else:
