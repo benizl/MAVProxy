@@ -5,7 +5,7 @@
 
 '''
 
-import time, math
+import time
 
 mpstate = None
 
