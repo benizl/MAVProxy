@@ -7,8 +7,10 @@
 
 import time
 
-mpstate = None
+import scsc_range
 
+mpstate = None
+controller = None
 
 
 ### Control parameters
@@ -35,9 +37,11 @@ land_alt = 3           # Altitude in meters to switch from loiter descent to LAN
 ### Craft control functions
 
 def climb():
+    controller.engage()
     mpstate.functions.process_stdin("rc 3 1650")
 
 def stop_climb():
+    controller.disengage()
     mpstate.functions.process_stdin("rc 3 1400")
 
 def yaw_in():
@@ -50,9 +54,11 @@ def yaw_out():
     mpstate.functions.process_stdin("rc 4 1425")
 
 def descend():
+    controller.engage()
     mpstate.functions.process_stdin("rc 3 1200")
 
 def land():
+    controller.disengage()
     mpstate.functions.process_stdin("mode land")
 
 def abort():
@@ -90,10 +96,13 @@ class inspect_state(object):
 
 def init(_mpstate):
     '''initialise module'''
-    global mpstate
+    global mpstate, controller
     mpstate = _mpstate
     mpstate.state = inspect_state()
     mpstate.command_map['scsc'] = (cmd_scsc, "Control SCSC inspection program")
+
+    controller = scsc_range.Controller(mpstate)
+
     print("SCSC Inspection loaded.  Begin program with 'scsc start'")
 
 def cmd_scsc(args):
