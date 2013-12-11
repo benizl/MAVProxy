@@ -37,8 +37,8 @@ class RelPositionController:
 		self.control_period_ms = 50 # 20 Hz
 
 		self.mav_len = 3
-		self.r_mav = []
-		self.b_mav = []
+		self._r_mav = []
+		self._b_mav = []
 
 		self._engaged_lock = threading.Lock()
 		# Lock is created unlocked, take it so the controller thread
@@ -92,19 +92,23 @@ class RelPositionController:
 
 	def handle_message(self, m):
 		if m.get_type() == 'RANGEFINDER':
+			# Short moving-average filters here mostly to guard
+			# against the case that two rangefinder messages come
+			# in with the same reading and the next is double. This
+			# can cause the rate estimator to bug out.  Mostly
+			# happens in simulation.
 			# TODO: Hacked bearing in radians in to voltage field,
 			# should have its own message type
+			self._r_mav.append(m.distance)
+			if len(self._r_mav) > self.mav_len:
+				self._r_mav.pop(0)
 
-			self.r_mav.append(m.distance)
-			if len(self.r_mav) > self.mav_len:
-				self.r_mav.pop(0)
+			self._b_mav.append(m.voltage)
+			if len(self._b_mav) > self.mav_len:
+				self._b_mav.pop(0)
 
-			self.b_mav.append(m.voltage)
-			if len(self.b_mav) > self.mav_len:
-				self.b_mav.pop(0)
-
-			r = sum(self.r_mav) / len(self.r_mav)
-			b = sum(self.b_mav) / len(self.b_mav)
+			r = sum(self._r_mav) / len(self._r_mav)
+			b = sum(self._b_mav) / len(self._b_mav)
 
 			sample = (r, b)
 			self._ranger_queue.put(sample)
