@@ -13,31 +13,32 @@ class RelPositionController:
 		self.ranger_max_m = 5.5
 		self.ranger_min_m  = 0.2
 
-		self.pitch_dist_p = 0.5
+		self.pitch_dist_p = 0
 		self.pitch_dist_i = 0
 		self.pitch_dist_d = 0
 
-		self.roll_dist_p = 0
+		self.roll_dist_p = 0.5
 		self.roll_dist_i = 0
 		self.roll_dist_d = 0
 
-		self.pitch_rate_p = 100
+		self.pitch_rate_p = 0
 		self.pitch_rate_i = 0
 		self.pitch_rate_d = 0
 
-		self.roll_rate_p = 0
+		self.roll_rate_p = 50
 		self.roll_rate_i = 0
 		self.roll_rate_d = 0
 
-		self.pitch_channel = 1
-		self.roll_channel = 2
+		self.pitch_channel = 2
+		self.roll_channel = 1
 
 		self.mid_rc = 1500
 
 		self.control_period_ms = 50 # 20 Hz
 
-		self._ranger_dist = 0
-		self._ranger_bear = 0
+		self.mav_len = 3
+		self.r_mav = []
+		self.b_mav = []
 
 		self._engaged_lock = threading.Lock()
 		# Lock is created unlocked, take it so the controller thread
@@ -45,6 +46,7 @@ class RelPositionController:
 		self._engaged_lock.acquire()
 
 		self._rc_queue = multiprocessing.Queue()
+		self._ranger_queue = multiprocessing.Queue()
 
 		self._terminate = False
 
@@ -92,8 +94,20 @@ class RelPositionController:
 		if m.get_type() == 'RANGEFINDER':
 			# TODO: Hacked bearing in radians in to voltage field,
 			# should have its own message type
-			self._ranger_dist = m.distance
-			self._ranger_bear = m.voltage
+
+			self.r_mav.append(m.distance)
+			if len(self.r_mav) > self.mav_len:
+				self.r_mav.pop(0)
+
+			self.b_mav.append(m.voltage)
+			if len(self.b_mav) > self.mav_len:
+				self.b_mav.pop(0)
+
+			r = sum(self.r_mav) / len(self.r_mav)
+			b = sum(self.b_mav) / len(self.b_mav)
+
+			sample = (r, b)
+			self._ranger_queue.put(sample)
 
 	def set_param(self, param, val):
 		''' Update module parameters, such as gains and targets.
@@ -102,7 +116,7 @@ class RelPositionController:
 		    these as the granularity imposed by the interpretter lock
 		    is good enough.'''
 		if param in self.__dict__:
-			self.__dict__[param] = val
+			self.__dict__[param] = float(val)
 		else:
 			raise AttributeError(param)
 
@@ -150,28 +164,45 @@ class RelPositionController:
 
 		while not self._terminate:
 
-			if self._ranger_dist < self.ranger_min_m or self._ranger_dist > self.ranger_max_m:
+			#try:
+			ranger_dist, ranger_bear = self._ranger_queue.get(True)
+			print(ranger_dist, ranger_bear)
+			#except Queue.Empty:
+			#	pass
+
+			if ranger_dist < self.ranger_min_m or ranger_dist > self.ranger_max_m:
 				# Wait until we actually have valid ranger data
-				time.sleep(0.5)
-				print("Waiting for range ({})".format(self._ranger_dist))
+				#time.sleep(0.5)
+				print("Waiting for range ({})".format(ranger_dist))
 				continue
 
 			dt = time.time() - last_time
+
+			if last_time == 0:
+				p_last_dist = ranger_dist
+				r_last_dist = 0
+				last_time = time.time()
+				continue
+
 			last_time = time.time()
 
-			if dt > 2.0 * self.control_period_ms / 1000.0:
-				print("WARNING: Control period slip {}".format(dt))
+			#if dt > 2.0 * self.control_period_ms / 1000.0:
+			#	print("WARNING: Control period slip {}".format(dt))
 				# TODO: Probably reset integrators here, or at least
 				# degrade them (when we have integrators!)
 
-			p_error = (self.target_dist_m - self._ranger_dist) * cos(self._ranger_bear)
+			p_error = (self.target_dist_m - ranger_dist) * cos(ranger_bear)
 			# Return a target speed, positive away from target, negative towards wall.
 			p_rate_target = p_error * self.pitch_dist_p
 			# Constrain target to 1 m/s  for sanity.
 			p_rate_target = RelPositionController._constrain(p_rate_target, -1, 1)
         
 			# Current speed, in m/s. Positive away from wall. Negative towards wall.
-			p_rate_current = (self._ranger_dist * cos(self._ranger_bear) - p_last_dist) / dt
+			p_rate_current = (ranger_dist * cos(ranger_bear) - p_last_dist) / dt
+
+			if p_rate_current > 4:
+				print("Pitch rate whacky: {} {} {} {} {} {}".format(p_error, p_rate_target, p_rate_current, ranger_dist * cos(ranger_bear), p_last_dist, dt))
+
 			# Speed Error, in m/seconds. Positive away from wall.
 			p_rate_error = p_rate_target - p_rate_current
 			p_rate_error = RelPositionController._constrain(p_rate_error, -4, 4)
@@ -179,19 +210,21 @@ class RelPositionController:
 			# Return positive pitch (nose up) to accelerate away from wall.
 			# TODO: I, D
 			p_ctrl = p_rate_error * self.pitch_rate_p
-			p_last_dist = self._ranger_dist * cos(self._ranger_bear)
+			p_last_dist = ranger_dist * cos(ranger_bear)
 
-			r_error = self._ranger_dist * sin(self._ranger_bear) * cos(self._ranger_bear)
+			r_error = ranger_dist * sin(-ranger_bear) #* cos(ranger_bear)
 			r_rate_target = r_error * self.roll_dist_p
 			r_rate_target = RelPositionController._constrain(r_rate_target, -1, 1)
         
-			r_rate_current = (self._ranger_dist * sin(self._ranger_bear) - r_last_dist) / dt
+			r_rate_current = (ranger_dist * sin(ranger_bear) - r_last_dist) / dt
 			r_rate_error = r_rate_target - r_rate_current
 			r_rate_error = RelPositionController._constrain(r_rate_error, -4, 4)
 
 			# TODO: I, D
 			r_ctrl = r_rate_error * self.roll_rate_p
-			r_last_dist = self._ranger_dist * sin(self._ranger_bear)
+			r_last_dist = ranger_dist * sin(ranger_bear)
+
+			print("R: {} {} {} {} {} {}".format(r_error, r_rate_target, r_rate_current, r_rate_error, r_ctrl, r_last_dist))
 
 			controls = {self.pitch_channel: p_ctrl + self.mid_rc,
 			            self.roll_channel : r_ctrl + self.mid_rc }
