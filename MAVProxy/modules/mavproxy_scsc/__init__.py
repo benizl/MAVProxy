@@ -106,7 +106,7 @@ def init(_mpstate):
     mpstate.command_map['scsc'] = (cmd_scsc, "Control SCSC inspection program")
 
     # TODO: Autodetect laser and/or use the correct by-id device
-    mpstate.state.controller = scsc_range.RelPositionController(mpstate, '/dev/ttyACM0')
+    mpstate.state.controller = scsc_range.RelPositionController(mpstate)
 
     print("SCSC Inspection loaded.  Begin program with 'scsc start'")
 
@@ -156,6 +156,8 @@ def angle_diff(angle1, angle2):
 
 def mavlink_packet(m):
     '''handle an incoming mavlink packet'''
+
+    mpstate.state.controller.handle_message(m)
 
     if m.get_type() == "RANGEFINDER":
         mpstate.state.dist = m.distance

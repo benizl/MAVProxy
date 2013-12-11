@@ -8,9 +8,12 @@ class RelPositionController:
 	def __init__(self, mpstate):
 
 		self._mpstate = mpstate
-		self.target_dist = 0
+		self.target_dist_m = 4
 
-		self.pitch_dist_p = 0
+		self.ranger_max_m = 5.5
+		self.ranger_min_m  = 0.2
+
+		self.pitch_dist_p = 0.5
 		self.pitch_dist_i = 0
 		self.pitch_dist_d = 0
 
@@ -18,7 +21,7 @@ class RelPositionController:
 		self.roll_dist_i = 0
 		self.roll_dist_d = 0
 
-		self.pitch_rate_p = 0
+		self.pitch_rate_p = 100
 		self.pitch_rate_i = 0
 		self.pitch_rate_d = 0
 
@@ -31,7 +34,10 @@ class RelPositionController:
 
 		self.mid_rc = 1500
 
-		self.control_period_ms = 10
+		self.control_period_ms = 50 # 20 Hz
+
+		self._ranger_dist = 0
+		self._ranger_bear = 0
 
 		self._engaged_lock = threading.Lock()
 		# Lock is created unlocked, take it so the controller thread
@@ -46,6 +52,7 @@ class RelPositionController:
 
 		self._ctrl_thread = threading.Thread(target=self.control_thread)
 		self._ctrl_thread.start()
+
 
 	def engage(self):
 		'''Release the engaged lock so the controller thread
@@ -76,13 +83,17 @@ class RelPositionController:
 				if i + 1 in overrides:
 					self._mpstate.status.override[i] = overrides[i + 1]
 				else:
-					self._mpstate.override[i] = 0 # Or 65535, unclear..
+					self._mpstate.status.override[i] = 0 # Or 65535, unclear..
 
 			self._mpstate.override_period.force()
 
 
 	def handle_message(self, m):
-		pass
+		if m.get_type() == 'RANGEFINDER':
+			# TODO: Hacked bearing in radians in to voltage field,
+			# should have its own message type
+			self._ranger_dist = m.distance
+			self._ranger_bear = m.voltage
 
 	def set_param(self, param, val):
 		''' Update module parameters, such as gains and targets.
@@ -131,65 +142,67 @@ class RelPositionController:
 		r_rate_error = 0
 		r_ctrl = 0
 
+		# Blocked here until we're engaged (by the module code above
+		# releasing this lock)
 		self._engaged_lock.acquire()
-
+		print("SCSC Engaged")
 		last_time = time.time()
 
-		ranger_dist = 0
-		ranger_bear = 0
-
 		while not self._terminate:
+
+			if self._ranger_dist < self.ranger_min_m or self._ranger_dist > self.ranger_max_m:
+				# Wait until we actually have valid ranger data
+				time.sleep(0.5)
+				print("Waiting for range ({})".format(self._ranger_dist))
+				continue
+
 			dt = time.time() - last_time
 			last_time = time.time()
 
-			if dt > 2 * self.control_period_ms / 1000:
+			if dt > 2.0 * self.control_period_ms / 1000.0:
 				print("WARNING: Control period slip {}".format(dt))
 				# TODO: Probably reset integrators here, or at least
-				# degrade them
+				# degrade them (when we have integrators!)
 
-			# Block until we get the first reading, then update non-blocking
-			# from there.  TODO: Check timestamp for sanity.
-			if ranger_dist == 0:
-				(t, ranger_dist, ranger_bear) = self._laser_queue.get()
-			else:
-				(t, ranger_dist, ranger_bear) = self._laser_queue.get(False)
-
-
-			p_error = (self.target_dist - ranger_dist) * cos(ranger_bear)
+			p_error = (self.target_dist_m - self._ranger_dist) * cos(self._ranger_bear)
 			# Return a target speed, positive away from target, negative towards wall.
 			p_rate_target = p_error * self.pitch_dist_p
-			# Constrain target to 100 cm/s  for sanity.
-			p_rate_target = RelPositionController._constrain(p_rate_target, -100, 100)
+			# Constrain target to 1 m/s  for sanity.
+			p_rate_target = RelPositionController._constrain(p_rate_target, -1, 1)
         
-			# Current speed, in cm/second. Positive away from wall. Negative towards wall.
-			p_rate_current = (ranger_dist*cos(ranger_bear) - p_last_dist) / dt
-			# Speed Error, in cm/seconds. Positive away from wall.
+			# Current speed, in m/s. Positive away from wall. Negative towards wall.
+			p_rate_current = (self._ranger_dist * cos(self._ranger_bear) - p_last_dist) / dt
+			# Speed Error, in m/seconds. Positive away from wall.
 			p_rate_error = p_rate_target - p_rate_current
-			p_rate_error = RelPositionController._constrain(p_rate_error, -400, 400)
+			p_rate_error = RelPositionController._constrain(p_rate_error, -4, 4)
 
 			# Return positive pitch (nose up) to accelerate away from wall.
 			# TODO: I, D
 			p_ctrl = p_rate_error * self.pitch_rate_p
+			p_last_dist = self._ranger_dist * cos(self._ranger_bear)
 
-
-			r_error = self.target_dist * ranger_bear * cos(ranger_bear)
+			r_error = self._ranger_dist * sin(self._ranger_bear) * cos(self._ranger_bear)
 			r_rate_target = r_error * self.roll_dist_p
-			r_rate_target = RelPositionController._constrain(r_rate_target, -100, 100)
+			r_rate_target = RelPositionController._constrain(r_rate_target, -1, 1)
         
-			r_rate_current = (ranger_dist * cos(ranger_bear) - r_last_dist) / dt
+			r_rate_current = (self._ranger_dist * sin(self._ranger_bear) - r_last_dist) / dt
 			r_rate_error = r_rate_target - r_rate_current
-			r_rate_error = RelPositionController._constrain(r_rate_error, -400, 400)
+			r_rate_error = RelPositionController._constrain(r_rate_error, -4, 4)
 
 			# TODO: I, D
 			r_ctrl = r_rate_error * self.roll_rate_p
+			r_last_dist = self._ranger_dist * sin(self._ranger_bear)
 
 			controls = {self.pitch_channel: p_ctrl + self.mid_rc,
 			            self.roll_channel : r_ctrl + self.mid_rc }
 
 			self._rc_queue.put(controls)
 
+			#print(p_error, r_error, p_rate_error, r_rate_error, controls)
+
 			# Horrid sleeping pattern, I've become everything I've ever hated..
-			time.sleep(last_time - time.time() + (self.control_period_ms / 1000))
+			to_sleep = last_time - time.time() + (self.control_period_ms / 1000.0)
+			time.sleep(to_sleep if to_sleep > 0 else 0)
 
 			self._engaged_lock.release()
 
