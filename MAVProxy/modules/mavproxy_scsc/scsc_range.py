@@ -13,7 +13,7 @@ class RelPositionController:
 		self.ranger_max_m = 5.5
 		self.ranger_min_m  = 0.2
 
-		self.pitch_dist_p = 0
+		self.pitch_dist_p = 0.5
 		self.pitch_dist_i = 0
 		self.pitch_dist_d = 0
 
@@ -21,11 +21,11 @@ class RelPositionController:
 		self.roll_dist_i = 0
 		self.roll_dist_d = 0
 
-		self.pitch_rate_p = 0
+		self.pitch_rate_p = 100
 		self.pitch_rate_i = 0
 		self.pitch_rate_d = 0
 
-		self.roll_rate_p = 50
+		self.roll_rate_p = 100
 		self.roll_rate_i = 0
 		self.roll_rate_d = 0
 
@@ -210,6 +210,7 @@ class RelPositionController:
 			# Return positive pitch (nose up) to accelerate away from wall.
 			# TODO: I, D
 			p_ctrl = p_rate_error * self.pitch_rate_p
+			p_ctrl = RelPositionController._constrain(p_ctrl, -500, 500)
 			p_last_dist = ranger_dist * cos(ranger_bear)
 
 			r_error = ranger_dist * sin(-ranger_bear) #* cos(ranger_bear)
@@ -222,6 +223,7 @@ class RelPositionController:
 
 			# TODO: I, D
 			r_ctrl = r_rate_error * self.roll_rate_p
+			r_ctrl = RelPositionController._constrain(r_ctrl, -500, 500)
 			r_last_dist = ranger_dist * sin(ranger_bear)
 
 			print("R: {} {} {} {} {} {}".format(r_error, r_rate_target, r_rate_current, r_rate_error, r_ctrl, r_last_dist))
