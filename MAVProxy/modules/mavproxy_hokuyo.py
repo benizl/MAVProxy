@@ -59,8 +59,8 @@ class laser_ranger:
 		self.min_laser_index = self._laser.steps / 4
 		self.max_laser_index = self._laser.steps * 3 / 4
 
-		self.cluster_thresh = 250   # 25cm
-		self.cluster_min_dist = 200 # 20cm
+		self.cluster_thresh = 200   # 20cm
+		self.cluster_min_dist = 100 # 10cm
 		self.cluster_min_count = 10
 
 		self._terminate = False
