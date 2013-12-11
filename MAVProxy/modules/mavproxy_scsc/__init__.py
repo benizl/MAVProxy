@@ -37,11 +37,11 @@ land_alt = 3           # Altitude in meters to switch from loiter descent to LAN
 ### Craft control functions
 
 def climb():
-    controller.engage()
+    mpstate.state.controller.engage()
     mpstate.functions.process_stdin("rc 3 1650")
 
 def stop_climb():
-    controller.disengage()
+    mpstate.state.controller.disengage()
     mpstate.functions.process_stdin("rc 3 1400")
 
 def yaw_in():
@@ -54,11 +54,11 @@ def yaw_out():
     mpstate.functions.process_stdin("rc 4 1425")
 
 def descend():
-    controller.engage()
+    mpstate.state.controller.engage()
     mpstate.functions.process_stdin("rc 3 1200")
 
 def land():
-    controller.disengage()
+    mpstate.state.controller.disengage()
     mpstate.functions.process_stdin("mode land")
 
 def abort():
@@ -66,6 +66,7 @@ def abort():
     # (in case what we were doing was landing)
     stop_climb()
     stop_yaw()
+    mpstate.state.controller.disengage() # Done by stop_climb also..
     mpstate.functions.process_stdin("loiter")
 
 ### End craft control functions
@@ -77,6 +78,9 @@ def name():
 def description():
     '''return module description'''
     return "SCSC inspection flight script"
+
+def print_usage():
+    print("Usage: scsc <start|abort|show|set|force_ctrl>")
 
 def enum(**enums):
     return type('Enum', (), enums)
@@ -101,12 +105,16 @@ def init(_mpstate):
     mpstate.state = inspect_state()
     mpstate.command_map['scsc'] = (cmd_scsc, "Control SCSC inspection program")
 
-    controller = scsc_range.Controller(mpstate)
+    # TODO: Autodetect laser and/or use the correct by-id device
+    mpstate.state.controller = scsc_range.RelPositionController(mpstate, '/dev/ttyACM0')
 
     print("SCSC Inspection loaded.  Begin program with 'scsc start'")
 
+def idle_task():
+    mpstate.state.controller.process_commands()
+
 def cmd_scsc(args):
-    if len(args) == 1:
+    if len(args) > 0:
         if args[0] == 'start':
             if mpstate.state.state == InspectState.INIT:
                 print("Starting SCSC inspection program")
@@ -117,8 +125,25 @@ def cmd_scsc(args):
             abort()
             mpstate.state.state = InspectState.INIT
             print("SCSC program aborted")
+        elif args[0] == 'show':
+            p = mpstate.state.controller.get_params()
+
+            for k in sorted(p):
+                print("\t{:<20}: {}".format(k, p[k]))
+        elif args[0] == 'set':
+            if len(args) == 3:
+                try:
+                    mpstate.state.controller.set_param(args[1], args[2])
+                except AttributeError:
+                    print("Can't find parameter {}".format(args[1]))
+            else:
+                print("usage: scsc set <param> <val>")
+        elif args[0] == 'force_ctrl':
+            mpstate.state.controller.engage()
+        else:
+            print_usage()
     else:
-        print("Usage: scsc <start|abort>")
+        print_usage()
 
 def angle_diff(angle1, angle2):
     ret = angle1 - angle2
