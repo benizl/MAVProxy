@@ -2239,7 +2239,12 @@ Auto-detected serial ports are:
 
     # open any mavlink UDP ports
     for p in opts.output:
-        mpstate.mav_outputs.append(mavutil.mavlink_connection(p, baud=opts.baudrate, input=False))
+        if p.find(',') < 0:
+            port, baud = p, opts.baudrate
+        else:
+            port, baud = p.split(',')
+
+        mpstate.mav_outputs.append(mavutil.mavlink_connection(port, baud=int(baud), input=False))
 
     if opts.sitl:
         mpstate.sitl_output = mavutil.mavudp(opts.sitl, input=False)
