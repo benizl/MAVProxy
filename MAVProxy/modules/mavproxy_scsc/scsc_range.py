@@ -13,7 +13,7 @@ class RelPositionController:
 		self.ranger_max_m = 5.5
 		self.ranger_min_m  = 0.2
 
-		self.pitch_dist_p = 0
+		self.pitch_dist_p = 0.5
 		self.pitch_dist_i = 0
 		self.pitch_dist_d = 0
 
@@ -21,11 +21,11 @@ class RelPositionController:
 		self.roll_dist_i = 0
 		self.roll_dist_d = 0
 
-		self.pitch_rate_p = 0
+		self.pitch_rate_p = 100
 		self.pitch_rate_i = 0
 		self.pitch_rate_d = 0
 
-		self.roll_rate_p = 50
+		self.roll_rate_p = 100
 		self.roll_rate_i = 0
 		self.roll_rate_d = 0
 
@@ -37,8 +37,8 @@ class RelPositionController:
 		self.control_period_ms = 50 # 20 Hz
 
 		self.mav_len = 3
-		self.r_mav = []
-		self.b_mav = []
+		self._r_mav = []
+		self._b_mav = []
 
 		self._engaged_lock = threading.Lock()
 		# Lock is created unlocked, take it so the controller thread
@@ -92,19 +92,23 @@ class RelPositionController:
 
 	def handle_message(self, m):
 		if m.get_type() == 'RANGEFINDER':
+			# Short moving-average filters here mostly to guard
+			# against the case that two rangefinder messages come
+			# in with the same reading and the next is double. This
+			# can cause the rate estimator to bug out.  Mostly
+			# happens in simulation.
 			# TODO: Hacked bearing in radians in to voltage field,
 			# should have its own message type
+			self._r_mav.append(m.distance)
+			if len(self._r_mav) > self.mav_len:
+				self._r_mav.pop(0)
 
-			self.r_mav.append(m.distance)
-			if len(self.r_mav) > self.mav_len:
-				self.r_mav.pop(0)
+			self._b_mav.append(m.voltage)
+			if len(self._b_mav) > self.mav_len:
+				self._b_mav.pop(0)
 
-			self.b_mav.append(m.voltage)
-			if len(self.b_mav) > self.mav_len:
-				self.b_mav.pop(0)
-
-			r = sum(self.r_mav) / len(self.r_mav)
-			b = sum(self.b_mav) / len(self.b_mav)
+			r = sum(self._r_mav) / len(self._r_mav)
+			b = sum(self._b_mav) / len(self._b_mav)
 
 			sample = (r, b)
 			self._ranger_queue.put(sample)
@@ -210,6 +214,7 @@ class RelPositionController:
 			# Return positive pitch (nose up) to accelerate away from wall.
 			# TODO: I, D
 			p_ctrl = p_rate_error * self.pitch_rate_p
+			p_ctrl = RelPositionController._constrain(p_ctrl, -500, 500)
 			p_last_dist = ranger_dist * cos(ranger_bear)
 
 			r_error = ranger_dist * sin(-ranger_bear) #* cos(ranger_bear)
@@ -222,6 +227,7 @@ class RelPositionController:
 
 			# TODO: I, D
 			r_ctrl = r_rate_error * self.roll_rate_p
+			r_ctrl = RelPositionController._constrain(r_ctrl, -500, 500)
 			r_last_dist = ranger_dist * sin(ranger_bear)
 
 			print("R: {} {} {} {} {} {}".format(r_error, r_rate_target, r_rate_current, r_rate_error, r_ctrl, r_last_dist))
