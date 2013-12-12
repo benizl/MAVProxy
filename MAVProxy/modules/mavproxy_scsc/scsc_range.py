@@ -37,6 +37,9 @@ class RelPositionController:
 		self.control_period_ms = 50 # 20 Hz
 
 		self.mav_len = 3
+
+		self.load_params()
+
 		self._r_mav = []
 		self._b_mav = []
 
@@ -124,6 +127,8 @@ class RelPositionController:
 		else:
 			raise AttributeError(param)
 
+		self.save_params()
+
 	def get_params(self):
 		public_params = {}
 
@@ -132,6 +137,27 @@ class RelPositionController:
 				public_params[k] = self.__dict__[k]
 
 		return public_params
+
+	def save_params(self, filename='default.scparm'):
+	    '''save parameters to a file'''
+	    import pickle, os
+	    h = open(filename + '.tmp', mode='wb')
+	    pickle.dump(self.get_params(), h)
+	    h.close()
+	    os.rename(filename + '.tmp', filename)
+
+
+	def load_params(self, filename='default.scparm'):
+	    '''load parameters from a file'''
+	    import pickle
+	    try:
+		h = open(filename, mode='rb')
+		d = pickle.load(h)
+		h.close()
+		for p in d:
+			self.set_param(p, d[p])
+	    except Exception as e:
+		print("Couldn't load parameter file, using defaults")
 
 	@staticmethod
 	def _constrain(d, low, high):
