@@ -1,6 +1,7 @@
 
 import threading, multiprocessing, Queue
 import time
+import os
 
 import hokuyo
 
@@ -38,7 +39,12 @@ class RelPositionController:
 
 		self.mav_len = 3
 
-		self.load_params()
+		# Ideally mpstate would have an "aircraft dir" attribute or something
+		# so we know where to store module-specific craft attributes.  For now
+		# we just take the lowest portion of the logfile path, knowing that this
+		# is in fact the aircraft directory.
+		self._param_file = os.path.join(mpstate.logfile_name.split('/')[0], 'default.scparm')
+		self.load_params(self._param_file)
 
 		self._r_mav = []
 		self._b_mav = []
@@ -127,7 +133,7 @@ class RelPositionController:
 		else:
 			raise AttributeError(param)
 
-		self.save_params()
+		self.save_params(self._param_file)
 
 	def get_params(self):
 		public_params = {}
@@ -139,23 +145,25 @@ class RelPositionController:
 		return public_params
 
 	def save_params(self, filename='default.scparm'):
-	    '''save parameters to a file'''
-	    import pickle, os
-	    h = open(filename + '.tmp', mode='wb')
-	    pickle.dump(self.get_params(), h)
-	    h.close()
+	    '''save parameters to a file. One param per line,
+               param,value format; simple but easily editable.
+               Sorted alphabetically for easy hand editing. '''
+	    with open(filename + '.tmp', mode='w') as f:
+	    	for p in sorted(self.get_params().iteritems()):
+			f.write("{},{}\n".format(*p))
+
 	    os.rename(filename + '.tmp', filename)
 
 
 	def load_params(self, filename='default.scparm'):
 	    '''load parameters from a file'''
-	    import pickle
 	    try:
-		h = open(filename, mode='rb')
-		d = pickle.load(h)
-		h.close()
-		for p in d:
-			self.set_param(p, d[p])
+		with open(filename, mode='r') as f:
+			for l in f:
+				try:
+					self.set_param(*l.split(','))
+				except:
+					pass
 	    except Exception as e:
 		print("Couldn't load parameter file, using defaults")
 
