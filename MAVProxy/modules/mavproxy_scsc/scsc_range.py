@@ -5,6 +5,24 @@ import os
 
 import hokuyo
 
+class MedianFilter:
+	def __init__(self, length):
+		self.d = []
+		self.length = int(length)
+
+	def filt(self, data):
+		self.d.append(data)
+		if len(self.d) == self.length:
+			r = sorted(self.d)[self.length // 2]
+			self.d.pop(0)
+		else:
+			r = data
+
+		return r
+
+	def flush(self):
+		self.d = []
+
 class RelPositionController:
 	def __init__(self, mpstate):
 
@@ -12,7 +30,7 @@ class RelPositionController:
 		self.target_dist_m = 4
 
 		self.ranger_max_m = 5.5
-		self.ranger_min_m  = 0.2
+		self.ranger_min_m  = 1.0
 
 		self.pitch_dist_p = 0.5
 		self.pitch_dist_i = 0
@@ -37,7 +55,8 @@ class RelPositionController:
 
 		self.control_period_ms = 50 # 20 Hz
 
-		self.mav_len = 3
+		self.mav_len = 10
+		self.med_len = 3
 
 		# Ideally mpstate would have an "aircraft dir" attribute or something
 		# so we know where to store module-specific craft attributes.  For now
@@ -48,6 +67,12 @@ class RelPositionController:
 
 		self._r_mav = []
 		self._b_mav = []
+
+		self._r_med = MedianFilter(self.med_len)
+		self._b_med = MedianFilter(self.med_len)
+
+		self._r_rate_med = MedianFilter(self.med_len)
+		self._p_rate_med = MedianFilter(self.med_len)
 
 		self._engaged_lock = threading.Lock()
 		# Lock is created unlocked, take it so the controller thread
@@ -79,6 +104,9 @@ class RelPositionController:
 			self._engaged_lock.acquire()
 			self._ctrl_running = False
 
+        def engaged(self):
+            return self._ctrl_running
+
 	def process_commands(self):
 		'''Called from the MAVProxy main loop.
 		   Should check for updated RC values from the controller
@@ -101,18 +129,26 @@ class RelPositionController:
 
 	def handle_message(self, m):
 		if m.get_type() == 'RANGEFINDER':
+
+			# Short median filter rejects single-sample spikes which
+			# seem to happen pretty regularly, even with the rangefinder
+			# clustering code
+			r = self._r_med.filt(m.distance)
+
+			# TODO: Hacked bearing in radians in to voltage field,
+			# should have its own message type
+			b = self._b_med.filt(m.voltage)
+
 			# Short moving-average filters here mostly to guard
 			# against the case that two rangefinder messages come
 			# in with the same reading and the next is double. This
 			# can cause the rate estimator to bug out.  Mostly
 			# happens in simulation.
-			# TODO: Hacked bearing in radians in to voltage field,
-			# should have its own message type
-			self._r_mav.append(m.distance)
+			self._r_mav.append(r)
 			if len(self._r_mav) > self.mav_len:
 				self._r_mav.pop(0)
 
-			self._b_mav.append(m.voltage)
+			self._b_mav.append(b)
 			if len(self._b_mav) > self.mav_len:
 				self._b_mav.pop(0)
 
@@ -204,7 +240,6 @@ class RelPositionController:
 
 			#try:
 			ranger_dist, ranger_bear = self._ranger_queue.get(True)
-			print(ranger_dist, ranger_bear)
 			#except Queue.Empty:
 			#	pass
 
@@ -237,6 +272,7 @@ class RelPositionController:
         
 			# Current speed, in m/s. Positive away from wall. Negative towards wall.
 			p_rate_current = (ranger_dist * cos(ranger_bear) - p_last_dist) / dt
+			p_rate_current = self._p_rate_med.filt(p_rate_current)
 
 			if p_rate_current > 4:
 				print("Pitch rate whacky: {} {} {} {} {} {}".format(p_error, p_rate_target, p_rate_current, ranger_dist * cos(ranger_bear), p_last_dist, dt))
@@ -256,6 +292,8 @@ class RelPositionController:
 			r_rate_target = RelPositionController._constrain(r_rate_target, -1, 1)
         
 			r_rate_current = (ranger_dist * sin(ranger_bear) - r_last_dist) / dt
+			r_rate_current = self._r_rate_med.filt(r_rate_current)
+
 			r_rate_error = r_rate_target - r_rate_current
 			r_rate_error = RelPositionController._constrain(r_rate_error, -4, 4)
 
@@ -264,7 +302,7 @@ class RelPositionController:
 			r_ctrl = RelPositionController._constrain(r_ctrl, -500, 500)
 			r_last_dist = ranger_dist * sin(ranger_bear)
 
-			print("R: {} {} {} {} {} {}".format(r_error, r_rate_target, r_rate_current, r_rate_error, r_ctrl, r_last_dist))
+			#print("R: {} {} {} {} {} {}".format(r_error, r_rate_target, r_rate_current, r_rate_error, r_ctrl, r_last_dist))
 
 			controls = {self.pitch_channel: p_ctrl + self.mid_rc,
 			            self.roll_channel : r_ctrl + self.mid_rc }
