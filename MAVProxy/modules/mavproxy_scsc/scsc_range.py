@@ -218,7 +218,7 @@ class RelPositionController:
 		r_rate_error = 0
 		r_ctrl = 0
 
-		last_time = time.time()
+		last_time = 0
 
 		while not self._terminate:
 
@@ -232,8 +232,8 @@ class RelPositionController:
 				# Wait until we actually have valid ranger data
 				#time.sleep(0.5)
 				print("Waiting for range ({})".format(ranger_dist))
-				controls = {self.pitch_channel: self.mid_rc, # TODO: Maybe release overrides?
-				            self.roll_channel : self.mid_rc }# i.e. write 0 (or -1, unclear)
+				controls = {self.pitch_channel: 0, # release overrides while we wait
+				            self.roll_channel : 0 }
 
 				self._rc_queue.put(controls)
 
@@ -264,7 +264,7 @@ class RelPositionController:
 
 			# Speed Error, in m/seconds. Positive away from wall.
 			p_rate_error = p_rate_target - p_rate_current
-			p_rate_error = RelPositionController._constrain(p_rate_error, -4, 4)
+			p_rate_error = RelPositionController._constrain(p_rate_error, -2, 2)
 
 			# Return positive pitch (nose up) to accelerate away from wall.
 			# TODO: I, D
@@ -280,7 +280,7 @@ class RelPositionController:
 			r_rate_current = self._r_rate_med.filt(r_rate_current)
 
 			r_rate_error = r_rate_target - r_rate_current
-			r_rate_error = RelPositionController._constrain(r_rate_error, -4, 4)
+			r_rate_error = RelPositionController._constrain(r_rate_error, -2, 2)
 
 			# TODO: I, D
 			r_ctrl = r_rate_error * self.roll_rate_p
