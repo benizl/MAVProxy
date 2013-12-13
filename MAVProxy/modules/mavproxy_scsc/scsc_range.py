@@ -317,11 +317,11 @@ class RelPositionController:
 
 			#print(p_error, r_error, p_rate_error, r_rate_error, controls)
 
+			self._engaged_lock.release()
+
 			# Horrid sleeping pattern, I've become everything I've ever hated..
 			to_sleep = last_time - time.time() + (self.control_period_ms / 1000.0)
 			time.sleep(to_sleep if to_sleep > 0 else 0)
-
-			self._engaged_lock.release()
 
 			# We aquire immediately before the termination condition is checked
 			# This means that if we are asked to terminate then unlocked in order
