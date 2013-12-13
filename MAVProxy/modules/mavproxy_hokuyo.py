@@ -66,7 +66,6 @@ class laser_ranger:
 		self._terminate = False
 
 		self._laser_queue = multiprocessing.Queue()
-		print("Ranger init")
 		self._laser_thread = threading.Thread(target=self.laser_thread)
 		self._laser_thread.start()
 
@@ -98,9 +97,8 @@ class laser_ranger:
 		    Sets up scans, calculates range and bearing to object and
 		    pushes this tuple to the laser queue to be read by the controller'''
 
-		print("Laser thread a")
 		self._laser.start_scan()
-		print("Laser thread start")
+
 		while not self._terminate:
 			min_dist = 5600
 			min_angle = 0
@@ -108,10 +106,13 @@ class laser_ranger:
 			d = self._laser.read_scan()
 
 			if d is None:
-				print("Scan failed")
+			#	print("Scan failed")
 				continue
 			#else:
 			#	print("Scan")
+
+			min_cluster_dist = 5600
+			min_cluster_angle = 0
 
 			for i in range(self.min_laser_index, self.max_laser_index):
 				if abs(d[i] - d[i-1]) < self.cluster_thresh:
@@ -124,8 +125,12 @@ class laser_ranger:
 						min_dist = min_cluster_dist
 						min_angle = min_cluster_angle
 					cluster_count = 0
+					min_cluster_dist = 5600
+					min_cluster_angle = 0
 				else:
 					cluster_count = 0
+					min_cluster_dist = 5600
+					min_cluster_angle = 0
 
 			# If we finished within a cluster we have to check minima here too
 			if min_cluster_dist < min_dist:
