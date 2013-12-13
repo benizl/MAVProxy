@@ -63,6 +63,8 @@ class laser_ranger:
 		self.cluster_min_dist = 100 # 10cm
 		self.cluster_min_count = 10
 
+		self.laser_cluster = 2
+
 		self._terminate = False
 
 		self._laser_queue = multiprocessing.Queue()
@@ -97,7 +99,7 @@ class laser_ranger:
 		    Sets up scans, calculates range and bearing to object and
 		    pushes this tuple to the laser queue to be read by the controller'''
 
-		self._laser.start_scan()
+		self._laser.start_scan(cluster=self.laser_cluster)
 
 		while not self._terminate:
 			min_dist = 5600
@@ -114,7 +116,8 @@ class laser_ranger:
 			min_cluster_dist = 5600
 			min_cluster_angle = 0
 
-			for i in range(self.min_laser_index, self.max_laser_index):
+			for i in range(self.min_laser_index // self.laser_cluster,
+			               self.max_laser_index // self.laser_cluster):
 				if abs(d[i] - d[i-1]) < self.cluster_thresh:
 					cluster_count += 1
 					if d[i] < min_cluster_dist and d[i] > self.cluster_min_dist:
