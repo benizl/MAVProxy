@@ -39,7 +39,7 @@ def cmd_hokuyo(args):
 		elif args[0] == 'set':
 			if len(args) == 3:
 				try:
-					mpstate.state.controller.set_param(args[1], args[2])
+					mpstate.laser_ranger.set_param(args[1], args[2])
 				except AttributeError:
 					print("Can't find parameter {}".format(args[1]))
 			else:
@@ -54,7 +54,7 @@ class laser_ranger:
 	def __init__(self):
 
 		# TODO: Auto-detect path, allow manual override etc
-		self._laser = hokuyo.HokuyoURG('/dev/ttyACM0')
+		self._laser = hokuyo.HokuyoURG('/dev/serial/by-id/usb-Hokuyo_Data_Flex_for_USB_URG-Series_USB_Driver-if00', initial_baud=115200, run_baud=115200)
 
 		self.min_laser_index = self._laser.steps / 4
 		self.max_laser_index = self._laser.steps * 3 / 4
@@ -66,7 +66,7 @@ class laser_ranger:
 		self._terminate = False
 
 		self._laser_queue = multiprocessing.Queue()
-
+		print("Ranger init")
 		self._laser_thread = threading.Thread(target=self.laser_thread)
 		self._laser_thread.start()
 
@@ -89,19 +89,29 @@ class laser_ranger:
 				r[1] / 1000.0,
 				r[2])
 			master.mav.callback(msg, master)
+
+			#print("Msg sent")
 			
 
 	def laser_thread(self):
 		''' Laser thread.
 		    Sets up scans, calculates range and bearing to object and
 		    pushes this tuple to the laser queue to be read by the controller'''
-		self._laser.start_scan()
 
+		print("Laser thread a")
+		self._laser.start_scan()
+		print("Laser thread start")
 		while not self._terminate:
 			min_dist = 5600
 			min_angle = 0
 			cluster_count = 0
 			d = self._laser.read_scan()
+
+			if d is None:
+				print("Scan failed")
+				continue
+			#else:
+			#	print("Scan")
 
 			for i in range(self.min_laser_index, self.max_laser_index):
 				if abs(d[i] - d[i-1]) < self.cluster_thresh:
@@ -153,5 +163,7 @@ class laser_ranger:
 		self._laser_thread.join(5)
 		if self._laser_thread.is_alive():
 			print("WARNING: Couldn't stop Hokuyo thread")
+
+		self._laser.close()
 
 
