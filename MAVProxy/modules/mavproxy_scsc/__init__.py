@@ -98,6 +98,8 @@ class inspect_state(object):
         self.chim_top = 0
         self.sample_time = 0
 
+	self.ctrl_in_alt_hold = False
+
 def init(_mpstate):
     '''initialise module'''
     global mpstate, controller
@@ -122,8 +124,9 @@ def cmd_scsc(args):
             else:
                 print("Already started!")
         elif args[0] == 'abort':
-            abort()
             mpstate.state.state = InspectState.INIT
+            mpstate.state.ctrl_in_alt_hold = False
+            abort()
             print("SCSC program aborted")
         elif args[0] == 'show':
             p = mpstate.state.controller.get_params()
@@ -140,6 +143,8 @@ def cmd_scsc(args):
                 print("usage: scsc set <param> <val>")
         elif args[0] == 'force_ctrl':
             mpstate.state.controller.engage()
+        elif args[0] == 'ctrl_ah':
+            mpstate.state.ctrl_in_alt_hold = True
         else:
             print_usage()
     else:
@@ -158,6 +163,10 @@ def mavlink_packet(m):
     '''handle an incoming mavlink packet'''
 
     mpstate.state.controller.handle_message(m)
+
+    if (mpstate.status.flightmode == 'ALT_HOLD' and
+       mpstate.state.ctrl_in_alt_hold and not mpstate.state.controller.engaged()):
+        mpstate.state.controller.engage()
 
     if m.get_type() == "RANGEFINDER":
         mpstate.state.dist = m.distance
