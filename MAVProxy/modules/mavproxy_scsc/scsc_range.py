@@ -53,8 +53,6 @@ class RelPositionController:
 
 		self.mid_rc = 1500
 
-		self.control_period_ms = 50 # 20 Hz
-
 		self.mav_len = 10
 		self.med_len = 3
 
@@ -74,11 +72,6 @@ class RelPositionController:
 		self._r_rate_med = MedianFilter(self.med_len)
 		self._p_rate_med = MedianFilter(self.med_len)
 
-		self._engaged_lock = threading.Lock()
-		# Lock is created unlocked, take it so the controller thread
-		# starts up paused
-		self._engaged_lock.acquire()
-
 		self._rc_queue = multiprocessing.Queue()
 		self._ranger_queue = multiprocessing.Queue()
 
@@ -91,17 +84,11 @@ class RelPositionController:
 
 
 	def engage(self):
-		'''Release the engaged lock so the controller thread
-		   can take it and go running'''
 		if not self._ctrl_running:
 			self._ctrl_running = True
-			self._engaged_lock.release()
 
 	def disengage(self):
-		''' Take the engaged lock, this blocks the controller
-		    thread'''
 		if self._ctrl_running:
-			self._engaged_lock.acquire()
 			self._ctrl_running = False
 			self._rc_queue.put({}) # Empty dict, release all overrides
 
@@ -231,18 +218,14 @@ class RelPositionController:
 		r_rate_error = 0
 		r_ctrl = 0
 
-		# Blocked here until we're engaged (by the module code above
-		# releasing this lock)
-		self._engaged_lock.acquire()
-		print("SCSC Engaged")
 		last_time = time.time()
 
 		while not self._terminate:
 
-			#try:
+			while not self._ctrl_running:
+				time.sleep(0.1)
+
 			ranger_dist, ranger_bear = self._ranger_queue.get(True)
-			#except Queue.Empty:
-			#	pass
 
 			if ranger_dist < self.ranger_min_m or ranger_dist > self.ranger_max_m:
 				# Wait until we actually have valid ranger data
@@ -264,11 +247,6 @@ class RelPositionController:
 				continue
 
 			last_time = time.time()
-
-			#if dt > 2.0 * self.control_period_ms / 1000.0:
-			#	print("WARNING: Control period slip {}".format(dt))
-				# TODO: Probably reset integrators here, or at least
-				# degrade them (when we have integrators!)
 
 			p_error = (self.target_dist_m - ranger_dist) * cos(ranger_bear)
 			# Return a target speed, positive away from target, negative towards wall.
@@ -317,17 +295,7 @@ class RelPositionController:
 
 			#print(p_error, r_error, p_rate_error, r_rate_error, controls)
 
-			self._engaged_lock.release()
 
-			# Horrid sleeping pattern, I've become everything I've ever hated..
-			to_sleep = last_time - time.time() + (self.control_period_ms / 1000.0)
-			time.sleep(to_sleep if to_sleep > 0 else 0)
-
-			# We aquire immediately before the termination condition is checked
-			# This means that if we are asked to terminate then unlocked in order
-			# to check that condition, we don't complete a single unexpected
-			# control loop iteration
-			self._engaged_lock.acquire()
 
 
 
