@@ -117,7 +117,7 @@ class laser_ranger:
 			for i in range(self.min_laser_index, self.max_laser_index):
 				if abs(d[i] - d[i-1]) < self.cluster_thresh:
 					cluster_count += 1
-					if d[i] < min_dist and d[i] > self.cluster_min_dist:
+					if d[i] < min_cluster_dist and d[i] > self.cluster_min_dist:
 						min_cluster_dist = d[i]
 						min_cluster_angle = self._laser.index_to_radians(i)
 				elif cluster_count > self.cluster_min_count:
