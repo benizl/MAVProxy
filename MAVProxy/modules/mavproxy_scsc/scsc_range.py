@@ -247,6 +247,11 @@ class RelPositionController:
 				# Wait until we actually have valid ranger data
 				#time.sleep(0.5)
 				print("Waiting for range ({})".format(ranger_dist))
+				controls = {self.pitch_channel: self.mid_rc, # TODO: Maybe release overrides?
+				            self.roll_channel : self.mid_rc }# i.e. write 0 (or -1, unclear)
+
+				self._rc_queue.put(controls)
+
 				continue
 
 			dt = time.time() - last_time
