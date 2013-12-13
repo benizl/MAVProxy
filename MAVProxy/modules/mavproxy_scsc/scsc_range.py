@@ -103,6 +103,7 @@ class RelPositionController:
 		if self._ctrl_running:
 			self._engaged_lock.acquire()
 			self._ctrl_running = False
+			self._rc_queue.put({}) # Empty dict, release all overrides
 
         def engaged(self):
             return self._ctrl_running
