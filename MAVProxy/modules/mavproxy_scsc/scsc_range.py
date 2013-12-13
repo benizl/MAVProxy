@@ -90,7 +90,7 @@ class RelPositionController:
 	def disengage(self):
 		if self._ctrl_running:
 			self._ctrl_running = False
-			self._rc_queue.put({}) # Empty dict, release all overrides
+			self._rc_queue.put({}) # Release all RC overrides
 
         def engaged(self):
             return self._ctrl_running
@@ -107,7 +107,7 @@ class RelPositionController:
 			pass
 		else:
 			for i in range(len(self._mpstate.status.override)):
-				if i + 1 in overrides:
+				if i + 1 in overrides and self._ctrl_running:
 					self._mpstate.status.override[i] = overrides[i + 1]
 				else:
 					self._mpstate.status.override[i] = 0 # Or 65535, unclear..
