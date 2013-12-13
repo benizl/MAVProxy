@@ -222,8 +222,9 @@ class RelPositionController:
 
 		while not self._terminate:
 
-			while not self._ctrl_running:
+			if not self._ctrl_running:
 				time.sleep(0.1)
+				continue
 
 			ranger_dist, ranger_bear = self._ranger_queue.get(True)
 
