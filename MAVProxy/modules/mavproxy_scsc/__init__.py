@@ -168,6 +168,10 @@ def mavlink_packet(m):
        mpstate.state.ctrl_in_alt_hold and not mpstate.state.controller.engaged()):
         mpstate.state.controller.engage()
 
+    if (mpstate.status.flightmode != 'ALT_HOLD' and
+       mpstate.state.ctrl_in_alt_hold and mpstate.state.controller.engaged()):
+        mpstate.state.controller.disengage()
+
     if m.get_type() == "RANGEFINDER":
         mpstate.state.dist = m.distance
 
