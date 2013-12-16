@@ -88,6 +88,7 @@ class laser_ranger:
 
 		self._circ_lr = 0
 		self._circ_lb = 0
+		self._loss_count = 0
 
 		self._laser_queue = multiprocessing.Queue()
 		self._laser_thread = threading.Thread(target=self.laser_thread)
@@ -250,7 +251,11 @@ class laser_ranger:
 		# If we didn't find any circles, return the last sample.  Not that
 		# nice, but hopefully doesn't happen much..
 		if len(circles) == 0:
-			return (time.time(), self._circ_lr, self._circ_lb)
+			if self._loss_count < 5:
+				self._loss_count += 1
+				return (time.time(), self._circ_lr, self._circ_lb)
+			else:
+				return (time.time(), 0, 0)
 
 		# Bearing to centre of closest circle, range to the edge of that
 		# circle along that bearing
@@ -266,6 +271,7 @@ class laser_ranger:
 		rang = d_min - chosen[2]
 
 		self._circ_lr, self._circ_lb = rang, bear
+		self._loss_count = 0
 
 		return (time.time(), rang, bear)
 
