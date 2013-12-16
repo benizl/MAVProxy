@@ -53,7 +53,7 @@ class RelPositionController:
 
 		self.mid_rc = 1500
 
-		self.mav_len = 10
+		self.mav_len = 20
 		self.med_len = 3
 
 		# Ideally mpstate would have an "aircraft dir" attribute or something
